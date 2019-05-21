@@ -36,18 +36,24 @@
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
 
-		<dependency>
-		  <groupId>com.ibm.watson.developer_cloud</groupId>
-		  <artifactId>assistant</artifactId>
-		  <version>5.4.0</version>
-		</dependency>
+<!-- 		<dependency> -->
+<!-- 		  <groupId>com.ibm.watson.developer_cloud</groupId> -->
+<!-- 		  <artifactId>assistant</artifactId> -->
+<!-- 		  <version>5.4.0</version> -->
+<!-- 		</dependency> -->
 
-		<dependency>
-		  <groupId>com.ibm.watson.developer_cloud</groupId>
-		  <artifactId>speech-to-text</artifactId>
-		  <version>5.4.0</version>
-		</dependency>
+<!-- 		<dependency> -->
+<!-- 		  <groupId>com.ibm.watson.developer_cloud</groupId> -->
+<!-- 		  <artifactId>speech-to-text</artifactId> -->
+<!-- 		  <version>5.4.0</version> -->
+<!-- 		</dependency> -->
 				
+		<dependency>
+		  <groupId>com.ibm.watson</groupId>
+		  <artifactId>assistant</artifactId>
+		  <version>7.0.0</version>
+		</dependency>		
+		
 		<dependency>
 	      <groupId>org.springframework.boot</groupId>
 	      <artifactId>spring-boot-devtools</artifactId>
