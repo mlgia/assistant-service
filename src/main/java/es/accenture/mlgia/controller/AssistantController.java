@@ -1,6 +1,7 @@
 package es.accenture.mlgia.controller;
 
 import java.util.Collections;
+import java.util.HashMap;
 
 import javax.annotation.PostConstruct;
 
@@ -18,9 +19,11 @@ import org.springframework.web.client.RestTemplate;
 import com.ibm.cloud.sdk.core.service.security.IamOptions;
 import com.ibm.watson.assistant.v2.Assistant;
 import com.ibm.watson.assistant.v2.model.CreateSessionOptions;
+import com.ibm.watson.assistant.v2.model.MessageContext;
 import com.ibm.watson.assistant.v2.model.MessageInput;
 import com.ibm.watson.assistant.v2.model.MessageOptions;
 import com.ibm.watson.assistant.v2.model.MessageResponse;
+import com.ibm.watson.assistant.v2.model.RuntimeEntity;
 import com.ibm.watson.assistant.v2.model.SessionResponse;
 
 import es.accenture.mlgia.dto.MessageDTO;
@@ -35,16 +38,7 @@ public class AssistantController {
 	
 	private Assistant service;
 	
-	//private HashMap<String, String> sessions;
-	
-	@Value("${service.assistant.workspace}")
-	private String workspaceId;
-	
-	@Value("${service.assistant.username}")
-	private String username;
-	
-	@Value("${service.assistant.password}")
-	private String password;
+	private HashMap<String, MessageContext> contexts;
 	
 	@Value("${service.assistant.version}")
 	private String version;
@@ -78,19 +72,18 @@ public class AssistantController {
 		
 		service = new Assistant(version, options);
 		service.setEndPoint(endpoint);
-		
-		//service.setUsernameAndPassword(username, password);
-		//contexts = new HashMap<String, Context>();
-		//sessions = new HashMap<String, String>();
+		contexts = new HashMap<String, MessageContext>();
 	}
 	
 	@RequestMapping(value = "/assistant", method = RequestMethod.POST)
 	public @ResponseBody MessageDTO sendMessage(@RequestBody MessageDTO message) {
 		
-		// Context context = null;
+		MessageContext context;
 		String sessionId = null;
-		//MessageResponse response = null;
 		String messageOut = "";
+		String parkingPlace = "";
+		String parkingDate = "";
+		String parkingTime = "";
 		
 		if (message.getMessageIn() == null) {
 			message.setMessageIn("");
@@ -98,25 +91,16 @@ public class AssistantController {
 		
 		// Retrieve the context if the conversation has started
 		if (message.getConversationId() != null && !"".equals(message.getConversationId())) {
-			//context = contexts.get(message.getConversationId());
 			sessionId = message.getConversationId();
+            context = contexts.get(message.getConversationId());
 		} else {
 			CreateSessionOptions sessionOptions = new CreateSessionOptions.Builder(assistantId).build();
 			SessionResponse response = service.createSession(sessionOptions).execute().getResult();
-			//System.out.println(response);
 			sessionId = response.getSessionId();
-			//sessions.put(message.getConversationId(), sessionId);
+			context = new MessageContext();
 		}
-				
-		// Prepare options for message in the specific context
-//		MessageOptions newMessageOptions = new MessageOptions.Builder()
-//				  .workspaceId(workspaceId)
-//				  .input(new InputData.Builder(message.getMessageIn()).build())
-//				  .context(context)
-//				  .build();
 		
-		// Send message in
-		// response = service.message(newMessageOptions).execute();
+		context = new MessageContext();
 		
 		MessageInput input = new MessageInput.Builder()
 				  .messageType(MessageInput.MessageType.TEXT)
@@ -125,38 +109,36 @@ public class AssistantController {
 
 		MessageOptions options = new MessageOptions.Builder(assistantId, sessionId)
 		  .input(input)
+		  .context(context)
 		  .build();
 
 		MessageResponse response = service.message(options).execute().getResult();
-
-		System.out.println(response);
-		
 		messageOut = response.getOutput().getGeneric().get(0).getText();
-
-		// the context must be updated always
-		//contexts.put(response.getContext().getConversationId(), response.getContext());
 		
-		//messageOut = response.getOutput().getText().get(0);
-		
-		
-		/*
-		if (response.getContext().get("parkingPlace") != null && !"".equals(.get("parkingPlace")) &&
-			response.getContext().get("parkingDate") != null && !"".equals(response.getContext().get("parkingDate")) && 
-			response.getContext().get("parkingTime") != null && !"".equals(response.getContext().get("parkingTime"))) {
-			
-			message.setMessagePredictOut( predict(response.getContext().get("parkingPlace").toString(), response.getContext().get("parkingDate").toString(), response.getContext().get("parkingTime").toString()) );
-		}
-		*/
 		log.info("User: {}", message.getMessageIn());
-		//log.info("Watson: {}", response.getOutput().getText().get(0));
+		log.info("Watson: {}", messageOut);
 		log.info("Predicted: {}", message.getMessagePredictOut());
-		//log.info("Parking: {}", response.getContext().get("parkingPlace") );
-		//log.info("Date: {}", response.getContext().get("parkingDate") );
-		//log.info("Time: {}", response.getContext().get("parkingTime") );
+		
+		for (RuntimeEntity entity : response.getOutput().getEntities()) {
+			log.info( "{}: {}", entity.getEntity(), entity.getValue() );
+			if (entity.getEntity().contentEquals("Aparcamiento")) {
+				parkingPlace = entity.getValue();
+			} else if (entity.getEntity().equals("sys-date")) {
+				parkingDate = entity.getValue();
+			} else if (entity.getEntity().equals("sys-time")) {
+				parkingTime = entity.getValue();
+			}
+		}
+		
+		if (!parkingPlace.isEmpty() && !parkingDate.isEmpty() && !parkingTime.isEmpty()) {
+			message.setMessagePredictOut( predict(parkingPlace, parkingDate, parkingTime) );
+		}
 		
 		message.setMessageOut(messageOut);
-		//message.setConversationId(response.getContext().getConversationId());
 		message.setConversationId(sessionId);
+		
+        contexts.put(sessionId, response.getContext());
+		
 		return message;
 	}
 	
