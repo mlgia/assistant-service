@@ -1,10 +1,14 @@
 package es.accenture.mlgia.controller;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import javax.annotation.PostConstruct;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -16,11 +20,16 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
+import com.google.gson.internal.LinkedTreeMap;
+import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 import com.ibm.cloud.sdk.core.service.security.IamOptions;
 import com.ibm.watson.assistant.v2.Assistant;
 import com.ibm.watson.assistant.v2.model.CreateSessionOptions;
+import com.ibm.watson.assistant.v2.model.DialogNodeOutputOptionsElement;
 import com.ibm.watson.assistant.v2.model.MessageContext;
+import com.ibm.watson.assistant.v2.model.MessageContextSkills;
 import com.ibm.watson.assistant.v2.model.MessageInput;
+import com.ibm.watson.assistant.v2.model.MessageInputOptions;
 import com.ibm.watson.assistant.v2.model.MessageOptions;
 import com.ibm.watson.assistant.v2.model.MessageResponse;
 import com.ibm.watson.assistant.v2.model.RuntimeEntity;
@@ -93,6 +102,9 @@ public class AssistantController {
 		if (message.getConversationId() != null && !"".equals(message.getConversationId())) {
 			sessionId = message.getConversationId();
             context = contexts.get(message.getConversationId());
+            if (context == null) {
+            	context = new MessageContext();
+            }
 		} else {
 			CreateSessionOptions sessionOptions = new CreateSessionOptions.Builder(assistantId).build();
 			SessionResponse response = service.createSession(sessionOptions).execute().getResult();
@@ -100,11 +112,13 @@ public class AssistantController {
 			context = new MessageContext();
 		}
 		
-		context = new MessageContext();
+		MessageInputOptions inputOptions = new MessageInputOptions();
+		inputOptions.setReturnContext(true);
 		
 		MessageInput input = new MessageInput.Builder()
 				  .messageType(MessageInput.MessageType.TEXT)
 				  .text(message.getMessageIn())
+				  .options(inputOptions)
 				  .build();
 
 		MessageOptions options = new MessageOptions.Builder(assistantId, sessionId)
@@ -112,27 +126,55 @@ public class AssistantController {
 		  .context(context)
 		  .build();
 
-		MessageResponse response = service.message(options).execute().getResult();
+		MessageResponse response = null;
+		try {
+			response = service.message(options).execute().getResult();
+		} catch (NotFoundException e) {
+			log.info(e.getLocalizedMessage());
+		}
 		messageOut = response.getOutput().getGeneric().get(0).getText();
+		
+		if (response.getOutput().getGeneric().size() > 1 && response.getOutput().getGeneric().get(1).getResponseType().equals("option")) {
+			List<String> optionsApar = new ArrayList<String>();
+			for (DialogNodeOutputOptionsElement option : response.getOutput().getGeneric().get(1).getOptions()) {
+				optionsApar.add(option.getLabel());
+			} 
+			message.setOptions(optionsApar);
+		}
 		
 		log.info("User: {}", message.getMessageIn());
 		log.info("Watson: {}", messageOut);
-		log.info("Predicted: {}", message.getMessagePredictOut());
 		
-		for (RuntimeEntity entity : response.getOutput().getEntities()) {
-			log.info( "{}: {}", entity.getEntity(), entity.getValue() );
-			if (entity.getEntity().contentEquals("Aparcamiento")) {
-				parkingPlace = entity.getValue();
-			} else if (entity.getEntity().equals("sys-date")) {
-				parkingDate = entity.getValue();
-			} else if (entity.getEntity().equals("sys-time")) {
-				parkingTime = entity.getValue();
-			}
+		
+//		for (RuntimeEntity entity : response.getOutput().getEntities()) {
+//			log.info( "{}: {}", entity.getEntity(), entity.getValue() );
+//			if (entity.getEntity().contentEquals("Aparcamiento")) {
+//				parkingPlace = entity.getValue();
+//			} else if (entity.getEntity().equals("sys-date")) {
+//				parkingDate = entity.getValue();
+//			} else if (entity.getEntity().equals("sys-time")) {
+//				parkingTime = entity.getValue();
+//			}
+//		}
+		MessageContextSkills skill;
+		//Map<String,Object> mainSkill;
+		LinkedTreeMap<String, LinkedTreeMap> mainSkill = null;
+		if (response != null && response.getContext() != null && response.getContext().getSkills() != null) {
+			 skill = response.getContext().getSkills();
+			 mainSkill = (LinkedTreeMap<String, LinkedTreeMap>) skill.getOrDefault("main skill", new LinkedTreeMap<>());	
+			 LinkedTreeMap userDefined = mainSkill.getOrDefault("user_defined", new LinkedTreeMap<>());
+			 parkingDate = (String) userDefined.getOrDefault("parkingDate", StringUtils.EMPTY);
+			 parkingPlace = (String) userDefined.getOrDefault("parkingPlace", StringUtils.EMPTY);
+			 parkingTime = (String) userDefined.getOrDefault("parkingTime", StringUtils.EMPTY);
+			 
 		}
 		
 		if (!parkingPlace.isEmpty() && !parkingDate.isEmpty() && !parkingTime.isEmpty()) {
 			message.setMessagePredictOut( predict(parkingPlace, parkingDate, parkingTime) );
+			log.info("Predicted: {}", message.getMessagePredictOut());
 		}
+		
+		
 		
 		message.setMessageOut(messageOut);
 		message.setConversationId(sessionId);
