@@ -104,6 +104,8 @@ public class AssistantController {
             context = contexts.get(message.getConversationId());
             if (context == null) {
             	context = new MessageContext();
+            	MessageContextSkills skills = new MessageContextSkills();
+            	context.setSkills(skills);
             }
 		} else {
 			CreateSessionOptions sessionOptions = new CreateSessionOptions.Builder(assistantId).build();
@@ -145,19 +147,9 @@ public class AssistantController {
 		log.info("User: {}", message.getMessageIn());
 		log.info("Watson: {}", messageOut);
 		
+		context = response.getContext();
 		
-//		for (RuntimeEntity entity : response.getOutput().getEntities()) {
-//			log.info( "{}: {}", entity.getEntity(), entity.getValue() );
-//			if (entity.getEntity().contentEquals("Aparcamiento")) {
-//				parkingPlace = entity.getValue();
-//			} else if (entity.getEntity().equals("sys-date")) {
-//				parkingDate = entity.getValue();
-//			} else if (entity.getEntity().equals("sys-time")) {
-//				parkingTime = entity.getValue();
-//			}
-//		}
 		MessageContextSkills skill;
-		//Map<String,Object> mainSkill;
 		LinkedTreeMap<String, LinkedTreeMap> mainSkill = null;
 		if (response != null && response.getContext() != null && response.getContext().getSkills() != null) {
 			 skill = response.getContext().getSkills();
@@ -166,22 +158,45 @@ public class AssistantController {
 			 parkingDate = (String) userDefined.getOrDefault("parkingDate", StringUtils.EMPTY);
 			 parkingPlace = (String) userDefined.getOrDefault("parkingPlace", StringUtils.EMPTY);
 			 parkingTime = (String) userDefined.getOrDefault("parkingTime", StringUtils.EMPTY);
+			 context = null;
 			 
 		}
 		
-		if (!parkingPlace.isEmpty() && !parkingDate.isEmpty() && !parkingTime.isEmpty()) {
+		if (parkingPlace != null && !parkingPlace.isEmpty() && parkingDate!= null && !parkingDate.isEmpty() && parkingTime != null && !parkingTime.isEmpty()) {
 			message.setMessagePredictOut( predict(parkingPlace, parkingDate, parkingTime) );
 			log.info("Predicted: {}", message.getMessagePredictOut());
+			resetContext(sessionId);
 		}
-		
-		
 		
 		message.setMessageOut(messageOut);
 		message.setConversationId(sessionId);
 		
-        contexts.put(sessionId, response.getContext());
+        contexts.put(sessionId, context);
 		
 		return message;
+	}
+	
+	private void resetContext(String sessionId) {
+		MessageInputOptions inputOptions = new MessageInputOptions();
+		inputOptions.setReturnContext(true);
+		
+		MessageInput input = new MessageInput.Builder()
+				  .messageType(MessageInput.MessageType.TEXT)
+				  .text("resetcontext")
+				  .options(inputOptions)
+				  .build();
+
+		MessageOptions options = new MessageOptions.Builder(assistantId, sessionId)
+		  .input(input)
+		  .context(null)
+		  .build();
+		
+		MessageResponse response = null;
+		try {
+			response = service.message(options).execute().getResult();
+		} catch (NotFoundException e) {
+			log.info(e.getLocalizedMessage());
+		}
 	}
 	
 	private String predict(String parking, String date, String time) {
